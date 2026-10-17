@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import tempfile
 import unittest
 
@@ -54,9 +55,46 @@ class PersistentWorkspaceTest(unittest.TestCase):
                              "print(json.dumps({'source': c['source'] + '\\n/* improved */', 'summary': 'iteration'}))\n")
             result = workspace().iterate(address, [os.sys.executable, str(agent)], iterations=2)
             self.assertEqual(result["revision"], 3)
+            result = workspace().read(address)
             self.assertEqual(len(result["history"]), 3)
             self.assertEqual(result["source"].count("improved"), 2)
             self.assertFalse(result["machine_code_modified"])
+            ws = workspace()
+            compact = ws.context(address)
+            self.assertNotIn("history", compact)
+            self.assertEqual(compact["history_count"], 3)
+            page = ws.history(address, limit=2)
+            self.assertEqual(len(page["revisions"]), 2)
+            self.assertNotIn("source", page["revisions"][0])
+            batch = ws.request_many([{"method": "read_reconstruction", "params": {"address": address, "view": "context"}}] * 2)
+            self.assertEqual(batch[0]["result"], batch[1]["result"])
+            self.assertEqual(ws.last_statistics["decompile_calls"], 1)
+            self.assertEqual(ws.last_statistics["cache_hits"], 1)
+            first = ws.reconstruct_many([address], [os.sys.executable, str(agent)], "test")
+            self.assertEqual(first[0]["status"], "completed")
+            second = ws.reconstruct_many([address], [os.sys.executable, str(agent)], "test")
+            self.assertEqual(second[0]["status"], "skipped")
+            with self.assertRaisesRegex(RuntimeError, "Context conflict"):
+                ws.write(address, "stale", first[0]["revision"], expected_context_hash=compact["context_hash"])
+            # A callee source revision changes caller context even without metadata edits.
+            caller_before = ws.context(symbols["caller"])
+            ws.write(address, body, first[0]["revision"], view="receipt", summary="new callee insight")
+            caller_after = ws.context(symbols["caller"])
+            self.assertNotEqual(caller_before["context_hash"], caller_after["context_hash"])
+            self.assertEqual(caller_before["revision"], caller_after["revision"])
+            listing = ws.functions(limit=2)
+            self.assertEqual(len(listing["functions"]), 2)
+            following = ws.functions(after=listing["next_after"], limit=2)
+            self.assertTrue(set(r["address"] for r in listing["functions"]).isdisjoint(r["address"] for r in following["functions"]))
+            migration_scripts = root / "migration-scripts"
+            migration_scripts.mkdir()
+            shutil.copy2(ROOT / "bridge/ghidra/ReaGhidraReconstructionStore.java", migration_scripts)
+            shutil.copy2(Path(__file__).parent / "ReaReconstructionMigrationTest.java", migration_scripts)
+            migration = subprocess.run([str(ws.ghidra / "support/analyzeHeadless"), str(project), "rea-project",
+                "-process", "*", "-noanalysis", "-scriptPath", str(migration_scripts),
+                "-postScript", str(migration_scripts / "ReaReconstructionMigrationTest.java")], capture_output=True, text=True, timeout=600)
+            self.assertEqual(migration.returncode, 0)
+            self.assertIn("REA_MIGRATION_TEST_PASSED", migration.stdout + migration.stderr)
             other = root / "other"
             other.write_bytes(binary.read_bytes() + b"different")
             with self.assertRaisesRegex(RuntimeError, "digest"):

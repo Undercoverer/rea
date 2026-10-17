@@ -1,6 +1,7 @@
 /** Required packaged sources, selected by their runtime role rather than order. */
 export const GHIDRA_BRIDGE_SOURCES = Object.freeze({
   workspace: "ReaGhidraWorkspace.java",
+  reconstructionStore: "ReaGhidraReconstructionStore.java",
   reconstruction: "ReaGhidraReconstruction.java",
   bridge: "ReaGhidraBridge.java",
   bundleActivator: "ReaGhidraBundleActivator.java",

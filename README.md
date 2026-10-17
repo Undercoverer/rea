@@ -67,6 +67,8 @@ Setup registers REA with your agent and installs matching workflow instructions.
 > **[Visit the REA website](https://rea.tools/)** for setup instructions, illustrated guides, and real case studies.
 
 For persistent Ghidra projects, editable recovered C, and iterative reconstruction in this fork, see [the workspace guide](docs/persistent-ghidra.md).
+Reconstruction now supports compact context, exact edits, and resumable function queues;
+see [token-efficiency measurements and limits](docs/token-efficiency.md).
 
 ## Quick start
 

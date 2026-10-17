@@ -245,6 +245,7 @@ public final class ReaGhidraBridge extends HeadlessScript {
                 decompiler.dispose();
                 decompiler = null;
             }
+            reconstruction.close();
             analysisExtensions.close();
             // The initial import was saved before serving. Suppress headless's
             // later import save, which would create a second Program file.
@@ -252,6 +253,7 @@ public final class ReaGhidraBridge extends HeadlessScript {
         }
     }
 
+    private final ReaGhidraReconstruction reconstruction = new ReaGhidraReconstruction();
     private boolean persistentProject;
     private boolean createdPersistentProgram;
 
@@ -486,11 +488,11 @@ public final class ReaGhidraBridge extends HeadlessScript {
                 yield request.method.equals("set_address_name")
                     ? setAddressName(request.params) : setAddressesNames(request.params);
             }
-            case "read_reconstruction", "write_reconstruction" -> {
+            case "read_reconstruction", "write_reconstruction", "read_reconstruction_history", "list_reconstructions" -> {
                 if (!descriptor.transport.equals("unix-socket"))
                     throw new RequestFailure("method_unavailable", "Reconstruction requires POSIX");
                 try {
-                    yield ReaGhidraReconstruction.execute(currentProgram, request.method, request.params, monitor);
+                    yield reconstruction.execute(currentProgram, request.method, request.params, monitor);
                 } finally { invalidateAnalysisCaches(); }
             }
             case "annotate_native_function" -> {

@@ -82,12 +82,14 @@ python3 bridge/ghidra/workspace.py \
   --address 00401106 read
 ```
 
-The response includes the live Ghidra name, signature, comment, decompiled C,
-reconstructed `source` (null before the first edit), revision number and full
-revision history. `metadata_changed_since_revision` marks name/signature drift
-since the last reconstruction. Live decompiled C and saved reconstructed C are
-returned separately: the original machine instructions remain authoritative
-for binary analysis. Saved text is never silently replaced by decompiler output.
+The CLI defaults to compact context: current source, live metadata, direct-callee
+summaries and a freshness hash. Before the first reconstruction, `source` is the
+live decompiler output. Distinct live decompiler output is included alongside
+saved source; identical text is sent only once. No history is included.
+Use `read --view full` for the original full response (including all history and
+`metadata_changed_since_revision`). Python `workspace.read(address)` keeps that
+full response for compatibility; `workspace.context(address)` selects compact
+context. Saved text is never silently replaced by decompiler output.
 
 Create `edit.json`:
 
@@ -113,7 +115,9 @@ python3 bridge/ghidra/workspace.py \
 `source` and `expected_revision` are required. Other fields are optional.
 Each edit stores a full source revision, timestamp, summary, requested metadata
 and post-edit function identity in Program Options under `REA reconstructed
-source v1`, keyed by original address. To restore an old version, read history
+source v2`, keyed by original address and revision. A first successful write
+transactionally migrates legacy v1 history; reads remain compatible with v1.
+Each revision stores source once, and latest reads avoid loading old v2 revisions. To restore an old version, read history
 and submit that source as a new revision using the current revision number.
 
 Explicit `signature` edits use Ghidra's signature parser and command, including
@@ -145,13 +149,26 @@ result = workspace.iterate("00401106", ["python3", "/absolute/ai_adapter.py"],
 ```
 
 The AI command is explicitly selected by the caller and runs locally without a
-shell. Each iteration reads fresh metadata, decompiled C, prior source and full
-history. Its stdin is JSON `{ "instruction": "...", "function": <read result> }`.
-It must return one JSON edit object on stdout, with `source` and optional
-`summary`, `signature`, `name`, `comment`, `declarations`. The adapter supplies the
-revision number from the read. Command failure, invalid output or a revision
-conflict stops iteration. Prior successful iterations remain saved. AI provider
-credentials and provider-specific SDKs are owned by the adapter.
+shell. Each iteration reads compact context and returns a compact receipt. Its
+stdin is JSON `{ "instruction": "...", "function": <compact context> }`. It returns
+exactly one of `source` (complete replacement), `edits` (exact replacements), or
+`{"unchanged": true}`. Source/edits may include `summary`, `signature`, `name`,
+`comment`, and `declarations`. Unchanged accepts no other fields.
+
+```json
+{
+  "edits": [{ "old": "return value + 3;", "new": "return value + 4;" }],
+  "summary": "Correct constant"
+}
+```
+
+Each `old` anchor must occur exactly once; replacements apply sequentially and
+never use fuzzy matching. The adapter supplies both revision and context hash,
+so changed observed evidence rejects a stale edit. Failures stop iteration;
+prior successful iterations remain saved. The default 65,536-byte UTF-8 context
+budget rejects an oversized model request before invoking the command; it does
+not truncate evidence. Configure `--max-context-bytes` explicitly. This is a byte
+budget, not a provider token limit. Credentials and SDKs belong to the adapter.
 
 ```sh
 python3 bridge/ghidra/workspace.py \
@@ -161,10 +178,64 @@ python3 bridge/ghidra/workspace.py \
 
 The existing authenticated Java bridge also accepts `read_reconstruction`
 (`address`) and `write_reconstruction` (the same edit fields plus `address`).
-`GhidraClient.callTool` exposes both operations to TypeScript integrations.
+`GhidraClient.callTool` exposes these operations to TypeScript integrations.
+Reads accept `view: "full" | "context"`; writes additionally accept `"receipt"`
+and optional `expected_context_hash`. `read_reconstruction_history` accepts
+`address`, zero-based `offset`, `limit` (1–1000), and `include_source` (false by
+default). It returns `revisions`, `total`, and `next_offset`. `list_reconstructions`
+accepts `after` (exclusive address cursor) and `limit` (1–1000), returning compact
+`functions` and `next_after`. History and listing do not decompile functions.
 The existing MCP tool catalog remains unchanged; use the Python API/CLI for
 reconstruction, or the client API inside an REA integration. Never connect a
 second client to an REA-owned socket or reuse a consumed session credential.
+
+## Resuming large projects
+
+List functions in bounded pages, then select the addresses relevant to the task:
+
+```sh
+python3 bridge/ghidra/workspace.py --binary /absolute/program --project /absolute/project list --limit 100
+python3 bridge/ghidra/workspace.py --binary /absolute/program --project /absolute/project \
+  run --addresses addresses.json --task-key recovery-v1 \
+  --command 'python3 /absolute/ai_adapter.py' --batch-size 32
+```
+
+`addresses.json` is a JSON array of original entry addresses. Repeat the same
+command after interruption. Each successful function is checkpointed immediately
+in `rea-work.sqlite3` inside the project. Completed entries with the same current
+context are skipped without invoking the AI. `task-key`, command arguments and
+instruction identify the task; change the key when the model configuration,
+external knowledge or intended quality threshold changes. `--force` revisits all
+selected entries. Completion means a successful adapter pass, not proven code
+correctness or convergence. Cyclic callers may require additional passes.
+
+Python equivalents are `functions(after=None, limit=100)`,
+`history(address, offset=0, limit=20, include_source=False)`, and
+`reconstruct_many(addresses, command, task_key, instruction=..., batch_size=32,
+max_context_bytes=65536, force=False)`. `request_many` accepts 1–256
+`{"method": ..., "params": ...}` entries and preserves per-item success/error
+results. A failed item does not roll back earlier saved items. The file adapter
+uses one JVM and decompiler per batch. Run owns an exclusive POSIX journal lock;
+Ghidra separately protects the project. Close other owners before using it.
+
+Resume validation reads fresh Ghidra evidence, so it still incurs analysis I/O.
+The hash covers binary identity, engine version, language/compiler spec, current
+source/revision, live decompiled text, function metadata, and observed direct
+callee signatures/comments/reconstruction summaries and revisions. It does not
+prove that indirect calls, runtime libraries, external knowledge or every type
+fact has been resolved. Use a new task key or force when those inputs change.
+Within a batch, edits invalidate pending callers; metadata edits conservatively
+refresh all remaining contexts. The journal stores hashes, not source copies.
+
+Decompiler reuse belongs to one reconstruction service and Program. Its key is
+function entry address; any Program modification clears the cache. Only complete
+successful results are cached, with a 16 MiB UTF-16 text ceiling and LRU eviction.
+The cache is discarded on close/Program replacement and never truncates source.
+This cap excludes Ghidra's own native/Java memory, JSON buffers, and batch replies;
+reduce batch size for large functions. No persistent raw decompiler cache is used.
+Older revisions remain explicitly available through paged history.
+
+See [the measured token benchmark](token-efficiency.md) for scope and results.
 
 ## Binary patching investigation
 

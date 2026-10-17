@@ -112,7 +112,9 @@ export type GhidraOperation =
   | GhidraInventoryOperation
   | GhidraFunctionOperation
   | "read_reconstruction"
-  | "write_reconstruction";
+  | "write_reconstruction"
+  | "read_reconstruction_history"
+  | "list_reconstructions";
 
 /** Owns an authenticated private Ghidra session with transport-bound mutation authority. */
 export class GhidraClient {

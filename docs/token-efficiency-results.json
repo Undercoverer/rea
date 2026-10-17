@@ -1,0 +1,32 @@
+{
+  "baseline": "bbda1804ea0b5aeebfb8c5a23cb1ceb51f21452d full-history wire contract",
+  "fixture_functions": 256,
+  "selected_functions": 4,
+  "prior_revisions_per_function": 12,
+  "fixture_source_sha256": "c19ff843baea641b0838049b8b718604c60d585dac1fca181fb0f5127257a0e4",
+  "binary_sha256": "e249cd7167f3cf4b43e651d8e381e6b33612c622573e72e6703bc22f2769cfb9",
+  "ghidra": "12.1.4",
+  "host": "Linux-6.18.55-x86_64-with-glibc2.39",
+  "tokenizer": "tiktoken cl100k_base",
+  "scope": "Deterministic source-edit task; tokenizer estimates, no actual model usage or quality evaluation. Full view retains the baseline wire contract; both views measured on candidate engine.",
+  "baseline_input_tokens": 65756,
+  "compact_input_tokens": 3654,
+  "baseline_output_tokens": 2480,
+  "exact_edit_output_tokens": 84,
+  "total_reduction_percent": 94.52,
+  "first_run_ai_calls": 4,
+  "resumed_ai_calls": 0,
+  "final_sources_match": true,
+  "cold_import_seconds": 12.474,
+  "candidate_first_run_seconds": 26.174,
+  "candidate_resume_seconds": 4.706,
+  "unmeasured": [
+    "actual model reasoning/usage",
+    "production large-project reconstruction quality",
+    "peak process-family memory",
+    "CPU time",
+    "baseline runtime"
+  ],
+  "resource_stops": 0,
+  "cleanup": "temporary project removed on successful exit"
+}
