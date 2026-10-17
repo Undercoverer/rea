@@ -610,3 +610,36 @@ describe("Ghidra Windows launcher runtime", () => {
     },
   );
 });
+
+describe("persistent project arguments", () => {
+  const coordinates = {
+    projectRoot: "/projects/binary-profile",
+    targetPath: "/snapshots/target",
+    bridgeScriptPath: "/bridge/ReaGhidraBridge.java",
+    descriptorPath: "/runtime/session.json",
+    ghidraLogPath: "/runtime/ghidra.log",
+    scriptLogPath: "/runtime/script.log",
+    platform: "linux" as const,
+  };
+  it("imports without discard flags", () => {
+    const args = ghidraHeadlessArguments({ ...coordinates, persistent: true });
+    expect(args).toContain("-import");
+    expect(args).not.toContain("-readOnly");
+    expect(args).not.toContain("-deleteProject");
+  });
+  it("reopens without overwriting prior analysis or replaying seeds", () => {
+    const args = ghidraHeadlessArguments({
+      ...coordinates,
+      persistent: true,
+      reopen: true,
+      seedPath: "/seeds.json",
+      mipsSoftFloat: true,
+    });
+    expect(args).toContain("-process");
+    expect(args).toContain("-noanalysis");
+    expect(args).not.toContain("-import");
+    expect(args).not.toContain("-preScript");
+    expect(args).not.toContain("/seeds.json");
+    expect(args.filter((value) => value === "-postScript")).toHaveLength(1);
+  });
+});

@@ -191,4 +191,4 @@ export const isGhidraShutdownAcknowledgement = (value: JsonValue): boolean =>
   value !== null &&
   !Array.isArray(value) &&
   value.shutdown === true &&
-  value.project_ephemeral === true;
+  typeof value.project_ephemeral === "boolean";

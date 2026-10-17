@@ -228,6 +228,7 @@ public final class ReaGhidraBridge extends HeadlessScript {
             );
         }
         admittedTargetSha256 = descriptor.targetSha256;
+        persistentProject = descriptor.persistent;
         // GhidraScript wraps run() in a transaction. End it before serving so
         // each edit owns a real outer transaction and can roll back immediately.
         end(true);
@@ -236,6 +237,7 @@ public final class ReaGhidraBridge extends HeadlessScript {
                 throw new IOException("Windows Ghidra P0 does not admit metadata recovery or database mutation.");
             analysisExtensions.analyze(descriptor.analysisExtensions, currentProgram, monitor);
             initializeDecompiler();
+            savePersistentProgram();
             serve(descriptor);
         }
         finally {
@@ -244,7 +246,22 @@ public final class ReaGhidraBridge extends HeadlessScript {
                 decompiler = null;
             }
             analysisExtensions.close();
+            // The initial import was saved before serving. Suppress headless's
+            // later import save, which would create a second Program file.
+            if (createdPersistentProgram) currentProgram.setTemporary(true);
         }
+    }
+
+    private boolean persistentProject;
+    private boolean createdPersistentProgram;
+
+    private void savePersistentProgram() throws Exception {
+        if (!persistentProject) return;
+        if (currentProgram.getDomainFile().getParent() == null) {
+            state.getProject().getProjectData().getRootFolder()
+                .createFile(currentProgram.getName(), currentProgram, monitor);
+            createdPersistentProgram = true;
+        } else if (currentProgram.isChanged()) currentProgram.save("REA checkpoint", monitor);
     }
 
     private void serve(SessionDescriptor descriptor) throws Exception {
@@ -395,11 +412,14 @@ public final class ReaGhidraBridge extends HeadlessScript {
                     requireKeys(request.params, Set.of());
                     JsonObject result = new JsonObject();
                     result.addProperty("shutdown", true);
-                    result.addProperty("project_ephemeral", true);
+                    savePersistentProgram();
+                    result.addProperty("project_ephemeral", !persistentProject);
                     writeSuccess(writer, request.id, result);
                     return;
                 }
-                writeSuccess(writer, request.id, handleRequest(request, descriptor));
+                JsonElement result = handleRequest(request, descriptor);
+                savePersistentProgram();
+                writeSuccess(writer, request.id, result);
             }
             catch (RequestFailure failure) {
                 writeFailure(writer, request.id, failure.code, failure.getMessage());
@@ -465,6 +485,13 @@ public final class ReaGhidraBridge extends HeadlessScript {
                     throw new RequestFailure("method_unavailable", "Windows P0 does not admit database mutation");
                 yield request.method.equals("set_address_name")
                     ? setAddressName(request.params) : setAddressesNames(request.params);
+            }
+            case "read_reconstruction", "write_reconstruction" -> {
+                if (!descriptor.transport.equals("unix-socket"))
+                    throw new RequestFailure("method_unavailable", "Reconstruction requires POSIX");
+                try {
+                    yield ReaGhidraReconstruction.execute(currentProgram, request.method, request.params, monitor);
+                } finally { invalidateAnalysisCaches(); }
             }
             case "annotate_native_function" -> {
                 if (!descriptor.transport.equals("unix-socket"))
@@ -1476,9 +1503,9 @@ public final class ReaGhidraBridge extends HeadlessScript {
             result.add("annotations", readback);
             result.add("dossier", analyzeFunction(query));
             JsonObject effects = new JsonObject();
-            effects.addProperty("scope", "session-analysis-database");
+            effects.addProperty("scope", persistentProject ? "persistent-analysis-database" : "session-analysis-database");
             effects.addProperty("source_bytes_modified", false);
-            effects.addProperty("persists_after_close", false);
+            effects.addProperty("persists_after_close", persistentProject);
             result.add("effects", effects);
             monitor.checkCancelled();
             commit = true;
@@ -4680,6 +4707,7 @@ public final class ReaGhidraBridge extends HeadlessScript {
         Set<String> keys = new HashSet<>(DESCRIPTOR_KEYS);
         if (parsed.isJsonObject() && parsed.getAsJsonObject().has("analysis_extensions"))
             keys.add("analysis_extensions");
+        if (parsed.isJsonObject() && parsed.getAsJsonObject().has("persistent")) keys.add("persistent");
         JsonObject object = requireObject(parsed, keys);
         return new SessionDescriptor(
             requireString(object, "transport"),
@@ -4689,7 +4717,8 @@ public final class ReaGhidraBridge extends HeadlessScript {
             requireSha256(object, "target_sha256"),
             requireString(object, "provider_version"),
             requireString(object, "profile_digest"),
-            object.has("analysis_extensions") ? object.getAsJsonArray("analysis_extensions") : new JsonArray()
+            object.has("analysis_extensions") ? object.getAsJsonArray("analysis_extensions") : new JsonArray(),
+            object.has("persistent") && requireBoolean(object, "persistent")
         );
     }
 
@@ -4894,7 +4923,8 @@ public final class ReaGhidraBridge extends HeadlessScript {
         String targetSha256,
         String providerVersion,
         String profileDigest,
-        JsonArray analysisExtensions
+        JsonArray analysisExtensions,
+        boolean persistent
     ) {}
     private record Request(int id, String method, JsonObject params) {}
 

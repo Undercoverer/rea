@@ -34,12 +34,23 @@ export const nativeFunctionAnnotationsSchema = z
     }),
     dossier: functionDossierSchema,
     effects: z.strictObject({
-      scope: z.literal("session-analysis-database"),
+      scope: z.enum([
+        "session-analysis-database",
+        "persistent-analysis-database",
+      ]),
       source_bytes_modified: z.literal(false),
-      persists_after_close: z.literal(false),
+      persists_after_close: z.boolean(),
     }),
   })
   .superRefine((value, context) => {
+    if (
+      (value.effects.scope === "persistent-analysis-database") !==
+      value.effects.persists_after_close
+    )
+      context.addIssue({
+        code: "custom",
+        message: "Persistence must match the database scope",
+      });
     if (
       value.annotations.address !== value.dossier.procedure.address ||
       value.annotations.name !== value.dossier.procedure.name

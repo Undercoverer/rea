@@ -36,6 +36,11 @@ const environmentSchema = z.object({
     .min(1)
     .refine(isAbsolute, "GHIDRA_INSTALL_DIR must be absolute")
     .optional(),
+  REA_GHIDRA_PROJECT_DIR: z
+    .string()
+    .min(1)
+    .refine(isAbsolute, "REA_GHIDRA_PROJECT_DIR must be absolute")
+    .optional(),
   JAVA_HOME: z
     .string()
     .min(1)

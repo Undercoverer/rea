@@ -6,7 +6,8 @@ import {
 } from "./GhidraAnalysisSeeds.js";
 import type { GhidraLanguageOverride } from "../config/ghidraLanguageOverride.js";
 import { snapshotEnvironment } from "../process/snapshotEnvironment.js";
-import { mkdir, realpath } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { access, mkdir, realpath } from "node:fs/promises";
 import { basename, dirname, join, posix, win32 } from "node:path";
 
 import writeFileAtomic from "write-file-atomic";
@@ -215,6 +216,7 @@ const ghidraLaunchCommandOutput = (
 /** Static coordinates for an extracted Ghidra release and packaged script. */
 export interface GhidraHeadlessLauncherOptions {
   readonly environment: Readonly<NodeJS.ProcessEnv>;
+  readonly persistentProjectDirectory?: string;
   readonly analyzeHeadlessPath: string;
   /** Release coordinate owned by installation inspection; null must not be guessed. */
   readonly configurationDirectoryName: string | null;
@@ -315,6 +317,39 @@ export class GhidraHeadlessLauncher implements GhidraLauncher {
         platform,
         this.options.configurationDirectoryName,
       );
+      const persistentRoot = this.options.persistentProjectDirectory;
+      const persistent = persistentRoot !== undefined;
+      if (persistent && platform === "win32")
+        throw new GhidraLaunchError(
+          "Persistent Ghidra projects currently require POSIX.",
+        );
+      const projectRoot =
+        persistentRoot !== undefined
+          ? join(
+              persistentRoot,
+              createHash("sha256")
+                .update(
+                  JSON.stringify([
+                    session.targetSha256,
+                    session.providerVersion,
+                    session.profileDigest,
+                  ]),
+                )
+                .digest("hex"),
+            )
+          : paths.projectRoot;
+      if (persistent)
+        await mkdir(projectRoot, { recursive: true, mode: 0o700 });
+      const reopen =
+        persistent &&
+        (await access(join(projectRoot, "rea-project.gpr")).then(
+          () => true,
+          (cause: NodeJS.ErrnoException) => {
+            if (cause.code === "ENOENT") return false;
+            throw cause;
+          },
+        ));
+      paths.projectRoot = projectRoot;
       let seedPath: string | undefined;
       let extensions: readonly GhidraExtension[] = [];
       if (
@@ -342,6 +377,7 @@ export class GhidraHeadlessLauncher implements GhidraLauncher {
       await writeGhidraRuntimeFile(
         paths.descriptorPath,
         `${JSON.stringify({
+          ...(persistent ? { persistent: true } : {}),
           transport: session.transport,
           endpoint_path: session.endpointPath,
           token: session.token,
@@ -367,7 +403,8 @@ export class GhidraHeadlessLauncher implements GhidraLauncher {
         ...(this.options.mipsSoftFloat === undefined
           ? {}
           : { mipsSoftFloat: this.options.mipsSoftFloat }),
-        projectRoot: paths.projectRoot,
+        projectRoot,
+        ...(persistent ? { persistent: true, reopen } : {}),
         targetPath: session.targetPath,
         bridgeScriptPath: this.options.bridgeScriptPath,
         descriptorPath: paths.descriptorPath,
@@ -674,6 +711,8 @@ const cleanupStartedProcess = (
 export interface GhidraHeadlessArgumentOptions {
   readonly platform?: NodeJS.Platform;
   readonly projectRoot: string;
+  readonly persistent?: boolean;
+  readonly reopen?: boolean;
   readonly targetPath: string;
   readonly bridgeScriptPath: string;
   readonly descriptorPath: string;
@@ -695,7 +734,7 @@ export interface GhidraHeadlessArgumentOptions {
   readonly seedPath?: string;
 }
 
-/** Build the complete read-only headless invocation in deterministic order. */
+/** Build the headless import or persistent reopen invocation. */
 export const ghidraHeadlessArguments = (
   options: GhidraHeadlessArgumentOptions,
 ): readonly string[] => {
@@ -704,6 +743,23 @@ export const ghidraHeadlessArguments = (
   const scriptPath =
     (options.platform ?? process.platform) === "win32" ? win32 : posix;
   const bridgeDirectory = scriptPath.dirname(options.bridgeScriptPath);
+  if (options.reopen)
+    return [
+      options.projectRoot,
+      "rea-project",
+      "-process",
+      "*",
+      "-noanalysis",
+      "-log",
+      options.ghidraLogPath,
+      "-scriptlog",
+      options.scriptLogPath,
+      "-scriptPath",
+      bridgeDirectory,
+      "-postScript",
+      options.bridgeScriptPath,
+      options.descriptorPath,
+    ];
   const override = options.languageOverride;
   const rawBinary = options.rawBinary;
   if (
@@ -801,8 +857,7 @@ export const ghidraHeadlessArguments = (
               "-cspec",
               rawBinary.compilerSpecId,
             ]),
-    "-readOnly",
-    "-deleteProject",
+    ...(options.persistent ? [] : ["-readOnly", "-deleteProject"]),
     "-log",
     options.ghidraLogPath,
     "-scriptlog",

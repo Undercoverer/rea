@@ -1,5 +1,7 @@
 <div id="native-ui-and-dispatch-investigation"></div>
 
+This fork supports opt-in [persistent Ghidra projects and reconstructed C](persistent-ghidra.md). References below to ephemeral Ghidra databases describe the default when `REA_GHIDRA_PROJECT_DIR` is unset.
+
 # Native binary investigation
 
 Use a native provider to discover functions, inspect instructions and pseudocode,

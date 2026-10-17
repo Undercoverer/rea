@@ -66,6 +66,8 @@ Setup registers REA with your agent and installs matching workflow instructions.
 
 > **[Visit the REA website](https://rea.tools/)** for setup instructions, illustrated guides, and real case studies.
 
+For persistent Ghidra projects, editable recovered C, and iterative reconstruction in this fork, see [the workspace guide](docs/persistent-ghidra.md).
+
 ## Quick start
 
 On Linux, Ghidra, JADX, firmware tool launches and static JavaScript/Electron

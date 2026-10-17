@@ -110,7 +110,9 @@ type GhidraStartupAttempt = SharedStartupAttempt<GhidraStartResult>;
 /** Closed Java-bridge operation union callable after the exact handshake. */
 export type GhidraOperation =
   | GhidraInventoryOperation
-  | GhidraFunctionOperation;
+  | GhidraFunctionOperation
+  | "read_reconstruction"
+  | "write_reconstruction";
 
 /** Owns an authenticated private Ghidra session with transport-bound mutation authority. */
 export class GhidraClient {

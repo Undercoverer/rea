@@ -117,6 +117,19 @@ describe("runtime configuration", () => {
     expect(parseConfig({ JAVA_HOME: "relative/jdk" }).ok).toBe(false);
   });
 
+  it("parses optional persistent Ghidra storage and rejects relative paths", () => {
+    expect(
+      parseConfig({ REA_GHIDRA_PROJECT_DIR: "/analysis/projects" }),
+    ).toMatchObject({
+      ok: true,
+      value: { ghidraProjectDir: "/analysis/projects" },
+    });
+    expect(
+      parseConfig({ REA_GHIDRA_PROJECT_DIR: "relative/projects" }).ok,
+    ).toBe(false);
+    expect(parseConfig({ REA_GHIDRA_PROJECT_DIR: "" }).ok).toBe(false);
+  });
+
   it("parses an optional absolute BYO ilspycmd path", () => {
     expect(
       parseConfig({ REA_ILSPY_CMD_PATH: "/home/user/.dotnet/tools/ilspycmd" }),

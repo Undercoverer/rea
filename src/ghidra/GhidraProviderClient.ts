@@ -336,6 +336,9 @@ export const createGhidraProviderClient = (input: {
     platform: installation.platform,
     launcher: new GhidraHeadlessLauncher({
       environment: input.environment,
+      ...(config.ghidraProjectDir === undefined
+        ? {}
+        : { persistentProjectDirectory: config.ghidraProjectDir }),
       analyzeHeadlessPath: prerequisites.value.analyzeHeadlessPath,
       configurationDirectoryName:
         prerequisites.value.configurationDirectoryName,
