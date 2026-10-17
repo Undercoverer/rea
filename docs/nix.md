@@ -79,8 +79,8 @@ nix flake check --print-build-logs
 ./result/bin/rea --help
 ```
 
-The nixpkgs input is pinned to a commit in flake.nix. `nix flake lock` records the
-input's content hash locally; configuration consumers also lock their inputs.
+The nixpkgs input is pinned to a commit in flake.nix and its content hash is
+recorded in flake.lock. Configuration consumers also lock their inputs.
 The installed-CLI check exercises both executable names and the direct dispatcher
 with an empty PATH, loads the Frida binding, and checks that packaged skills
 and fork Java sources exist.

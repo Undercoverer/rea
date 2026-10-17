@@ -1,7 +1,7 @@
 {
   description = "REA fork with the upstream CLI and setup workflow";
 
-  # Pin the package set even before a consumer generates flake.lock.
+  # Keep standalone and configuration-flake installations on the same package set.
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/55bfb4d7437bd4e09ab7cba58a43bd68eb310044";
 
   outputs = { self, nixpkgs }:

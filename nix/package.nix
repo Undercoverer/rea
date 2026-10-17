@@ -34,6 +34,9 @@ let
       # Same prebuild selected by Frida's install hook, fetched with a fixed
       # hash instead of allowing an install script to download during a build.
       tar -xzf ${fridaNative} -C node_modules/frida
+      # npm installs both libc variants of some optional native packages.
+      # This derivation uses glibc; musl variants are never selected at runtime.
+      find node_modules -type d -name '*-linux-*-musl' -prune -exec rm -rf {} +
       autoPatchelf node_modules
     '';
     buildPhase = ''
