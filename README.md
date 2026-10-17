@@ -70,6 +70,8 @@ For persistent Ghidra projects, editable recovered C, and iterative reconstructi
 Reconstruction now supports compact context, exact edits, and resumable function queues;
 see [token-efficiency measurements and limits](docs/token-efficiency.md).
 
+For Nix and NixOS, see [the fork installation guide](docs/nix.md).
+
 ## Quick start
 
 On Linux, Ghidra, JADX, firmware tool launches and static JavaScript/Electron
